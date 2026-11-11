@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use clap::{Parser, Subcommand};
 
 use netavark::commands::create;
+#[cfg(target_os = "linux")]
 use netavark::commands::dhcp_proxy;
 use netavark::commands::firewall_reload;
 #[cfg(target_os = "linux")]
@@ -52,6 +53,7 @@ enum SubCommand {
     /// Display info about netavark.
     Version(version::Version),
     /// Start dhcp-proxy
+    #[cfg(target_os = "linux")]
     DHCPProxy(dhcp_proxy::Opts),
     /// Listen for the firewalld reload event and reload fw rules
     #[cfg(target_os = "linux")]
@@ -92,6 +94,7 @@ fn main() {
         ),
         SubCommand::Update(mut update) => update.exec(config, aardvark_bin, rootless),
         SubCommand::Version(version) => version.exec(),
+        #[cfg(target_os = "linux")]
         SubCommand::DHCPProxy(proxy) => dhcp_proxy::serve(proxy),
         #[cfg(target_os = "linux")]
         SubCommand::FirewallDReload => firewalld_reload::listen(config),

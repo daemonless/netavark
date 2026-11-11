@@ -1,7 +1,9 @@
 use crate::dhcp_proxy::lib::g_rpc::NetworkConfig;
 use crate::error::NetavarkError;
 use ipnet::PrefixLenError;
+#[cfg(target_os = "linux")]
 use mozim::DhcpError;
+#[cfg(target_os = "linux")]
 use mozim::ErrorKind::InvalidArgument;
 use std::net::AddrParseError;
 use std::num::ParseIntError;
@@ -71,6 +73,7 @@ impl From<AddrParseError> for ProxyError {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl From<ProxyError> for DhcpError {
     fn from(e: ProxyError) -> Self {
         DhcpError::new(InvalidArgument, e.to_string())
