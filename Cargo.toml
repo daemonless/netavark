@@ -56,7 +56,6 @@ tokio-stream = { version = "0.1.19", features = ["net"] }
 tonic = "0.14.8"
 tonic-prost = "0.14.8"
 prost = "0.14.4"
-mozim = { version = "0.3.3", default-features = false }
 futures-channel = "0.3.34"
 futures-core = "0.3.34"
 futures-util = "0.3.34"
@@ -65,6 +64,10 @@ hyper-util = "0.1.21"
 regex = "1.13.1"
 serde_with = "3.21.0"
 chrono = { version = "0.4.45", features = ["serde"] }
+
+# The DHCP proxy's client library needs Linux raw packet sockets.
+[target.'cfg(target_os = "linux")'.dependencies]
+mozim = { version = "0.3.3", default-features = false }
 
 [build-dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

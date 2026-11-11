@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use crate::error::{NetavarkError, NetavarkResult};
 
 pub mod create;
+#[cfg(target_os = "linux")]
 pub mod dhcp_proxy;
 pub mod firewall_reload;
 #[cfg(target_os = "linux")]

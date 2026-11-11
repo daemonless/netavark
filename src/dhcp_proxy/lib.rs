@@ -21,8 +21,11 @@ use tower::service_fn;
 pub mod g_rpc {
     include!(concat!(env!("OUT_DIR"), "/netavark_proxy.rs"));
     use crate::dhcp_proxy::lib::VectorConv;
+    #[cfg(target_os = "linux")]
     use crate::dhcp_proxy::types::{CustomErr, ProxyError};
+    #[cfg(target_os = "linux")]
     use mozim::DhcpV4Lease;
+    #[cfg(target_os = "linux")]
     use std::convert::TryFrom;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
@@ -38,6 +41,7 @@ pub mod g_rpc {
         }
     }
 
+    #[cfg(target_os = "linux")]
     impl From<DhcpV4Lease> for Lease {
         fn from(l: DhcpV4Lease) -> Lease {
             // Since these fields are optional as per mozim. Match them first and then set them
@@ -66,6 +70,7 @@ pub mod g_rpc {
         }
     }
 
+    #[cfg(target_os = "linux")]
     impl TryFrom<Lease> for DhcpV4Lease {
         type Error = ProxyError;
         fn try_from(l: Lease) -> Result<Self, ProxyError> {
@@ -111,6 +116,7 @@ pub mod g_rpc {
         }
     }
 
+    #[cfg(any(target_os = "linux", test))]
     fn handle_ip_vectors(ip: Option<Vec<std::net::Ipv4Addr>>) -> Vec<String> {
         let mut ips: Vec<String> = Vec::new();
         if let Some(j) = ip {
