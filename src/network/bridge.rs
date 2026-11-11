@@ -17,8 +17,8 @@ use crate::{
     error::{ErrorWrap, NetavarkError, NetavarkErrorList, NetavarkResult},
     exec_netns,
     firewall::{
-        nft::MAX_HASH_SIZE,
         state::{remove_fw_config, write_fw_config},
+        MAX_HASH_SIZE,
     },
     network::{constants, sysctl::disable_ipv6_autoconf, types},
 };
