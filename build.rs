@@ -64,9 +64,16 @@ fn main() {
     println!("cargo:rustc-env=GIT_COMMIT={commit}");
 
     // Handle default firewall driver.
-    // Allowed values "nftables" and "none".
+    // Allowed values "nftables" and "none". nftables only exists on Linux,
+    // so every other target defaults to "none".
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let fw_default = if target_os == "linux" {
+        "nftables"
+    } else {
+        "none"
+    };
     let fwdriver = match env::var("NETAVARK_DEFAULT_FW")
-        .unwrap_or("nftables".to_string())
+        .unwrap_or(fw_default.to_string())
         .as_str()
     {
         "nftables" => "nftables",
