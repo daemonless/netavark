@@ -5,6 +5,7 @@ use crate::error::{NetavarkError, NetavarkResult};
 pub mod create;
 pub mod dhcp_proxy;
 pub mod firewall_reload;
+#[cfg(target_os = "linux")]
 pub mod firewalld_reload;
 pub mod setup;
 pub mod teardown;

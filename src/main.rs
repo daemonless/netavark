@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use netavark::commands::create;
 use netavark::commands::dhcp_proxy;
 use netavark::commands::firewall_reload;
+#[cfg(target_os = "linux")]
 use netavark::commands::firewalld_reload;
 use netavark::commands::setup;
 use netavark::commands::teardown;
@@ -53,6 +54,7 @@ enum SubCommand {
     /// Start dhcp-proxy
     DHCPProxy(dhcp_proxy::Opts),
     /// Listen for the firewalld reload event and reload fw rules
+    #[cfg(target_os = "linux")]
     #[command(name = "firewalld-reload")]
     FirewallDReload,
     // Re-applies firewall rules for all networks.
@@ -91,6 +93,7 @@ fn main() {
         SubCommand::Update(mut update) => update.exec(config, aardvark_bin, rootless),
         SubCommand::Version(version) => version.exec(),
         SubCommand::DHCPProxy(proxy) => dhcp_proxy::serve(proxy),
+        #[cfg(target_os = "linux")]
         SubCommand::FirewallDReload => firewalld_reload::listen(config),
         SubCommand::FirewallReload => firewall_reload::firewall_reload(config),
     };

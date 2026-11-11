@@ -5,10 +5,15 @@ use crate::network::internal_types::{
 use log::{debug, info};
 use zbus::blocking::Connection;
 
+#[cfg(target_os = "linux")]
 pub mod firewalld;
 pub mod fwnone;
+#[cfg(target_os = "linux")]
 pub mod nft;
 pub mod state;
+
+/// Max length of the network hash used in firewall object names.
+pub const MAX_HASH_SIZE: usize = 13;
 
 const FIREWALLD: &str = "firewalld";
 const NFTABLES: &str = "nftables";
@@ -41,7 +46,9 @@ pub trait FirewallDriver {
 
 /// Types of firewall backend
 enum FirewallImpl {
+    #[cfg(target_os = "linux")]
     Firewalld(Connection),
+    #[cfg(target_os = "linux")]
     Nftables,
     Fwnone,
 }
@@ -52,6 +59,7 @@ fn get_firewall_impl(driver_name: Option<String>) -> NetavarkResult<FirewallImpl
     if let Some(driver) = driver_name {
         debug!("Forcibly using firewall driver {driver}");
         match driver.to_lowercase().as_str() {
+            #[cfg(target_os = "linux")]
             FIREWALLD => {
                 let conn = match Connection::system() {
                     Ok(c) => c,
@@ -64,7 +72,14 @@ fn get_firewall_impl(driver_name: Option<String>) -> NetavarkResult<FirewallImpl
                 };
                 return Ok(FirewallImpl::Firewalld(conn));
             }
+            #[cfg(target_os = "linux")]
             NFTABLES => return Ok(FirewallImpl::Nftables),
+            #[cfg(not(target_os = "linux"))]
+            FIREWALLD | NFTABLES => {
+                return Err(NetavarkError::Message(format!(
+                    "firewall driver {driver} is only supported on Linux"
+                )))
+            }
             NONE => return Ok(FirewallImpl::Fwnone),
             any => {
                 return Err(NetavarkError::Message(format!(
@@ -110,10 +125,12 @@ pub fn get_supported_firewall_driver(
 ) -> NetavarkResult<Box<dyn FirewallDriver>> {
     match get_firewall_impl(driver_name) {
         Ok(fw) => match fw {
+            #[cfg(target_os = "linux")]
             FirewallImpl::Firewalld(conn) => {
                 info!("Using firewalld firewall driver");
                 firewalld::new(conn)
             }
+            #[cfg(target_os = "linux")]
             FirewallImpl::Nftables => {
                 info!("Using nftables firewall driver");
                 nft::new()

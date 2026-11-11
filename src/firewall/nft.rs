@@ -31,8 +31,6 @@ const ISOLATION3CHAIN: &str = "NETAVARK-ISOLATION-3";
 
 const CT_MARK_NAME: Cow<'_, str> = Cow::Borrowed("mark");
 
-pub(crate) const MAX_HASH_SIZE: usize = 13;
-
 const MASQUERADE_MASK: u32 = 0x2000;
 const DNAT_MASK: u32 = 0x1000;
 
