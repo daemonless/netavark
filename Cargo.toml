@@ -48,7 +48,6 @@ sha2 = "0.11.1"
 base16ct = "1.0.0"
 netlink-packet-route = "0.33.0"
 netlink-packet-core = "0.9.0"
-netlink-sys = "0.9.0"
 nftables = "0.6.3"
 fs2 = "0.4.3"
 tokio = { version = "1.54.0", features = ["rt", "rt-multi-thread", "signal", "fs", "time"] }
@@ -68,6 +67,8 @@ chrono = { version = "0.4.45", features = ["serde"] }
 # The DHCP proxy's client library needs Linux raw packet sockets.
 [target.'cfg(target_os = "linux")'.dependencies]
 mozim = { version = "0.3.3", default-features = false }
+# The libc crate has no FreeBSD netlink definitions; see network/netlink_socket.rs.
+netlink-sys = "0.9.0"
 
 [build-dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

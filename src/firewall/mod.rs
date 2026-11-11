@@ -3,6 +3,7 @@ use crate::network::internal_types::{
     PortForwardConfig, SetupNetwork, TearDownNetwork, TeardownPortForward,
 };
 use log::{debug, info};
+#[cfg(target_os = "linux")]
 use zbus::blocking::Connection;
 
 #[cfg(target_os = "linux")]

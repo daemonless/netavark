@@ -20,6 +20,7 @@ use tower::service_fn;
 #[allow(clippy::unwrap_used, clippy::double_must_use)]
 pub mod g_rpc {
     include!(concat!(env!("OUT_DIR"), "/netavark_proxy.rs"));
+    #[cfg(target_os = "linux")]
     use crate::dhcp_proxy::lib::VectorConv;
     #[cfg(target_os = "linux")]
     use crate::dhcp_proxy::types::{CustomErr, ProxyError};
@@ -27,7 +28,9 @@ pub mod g_rpc {
     use mozim::DhcpV4Lease;
     #[cfg(target_os = "linux")]
     use std::convert::TryFrom;
+    #[cfg(target_os = "linux")]
     use std::net::Ipv4Addr;
+    #[cfg(target_os = "linux")]
     use std::str::FromStr;
 
     impl Lease {

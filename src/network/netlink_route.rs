@@ -3,6 +3,7 @@ use std::{
     os::fd::{AsFd, AsRawFd, BorrowedFd},
 };
 
+use super::netlink_socket::NETLINK_ROUTE;
 use crate::{
     error::{NetavarkError, NetavarkResult},
     network::{
@@ -21,7 +22,6 @@ use netlink_packet_route::{
     route::{RouteAddress, RouteMessage, RouteProtocol, RouteScope, RouteType},
     AddressFamily, RouteNetlinkMessage,
 };
-use netlink_sys::protocols::NETLINK_ROUTE;
 
 #[derive(Clone)]
 pub struct CreateLinkOptions<'fd> {

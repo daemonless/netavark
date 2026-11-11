@@ -20,6 +20,7 @@ pub mod internal_types;
 
 pub mod netlink;
 pub mod netlink_route;
+mod netlink_socket;
 
 pub mod plugin;
 pub mod sysctl;

@@ -19,5 +19,6 @@ pub mod netlink {
     //! consumers.
     pub use netlink_packet_core as packet_core;
     pub use netlink_packet_route as packet_route;
+    #[cfg(target_os = "linux")]
     pub use netlink_sys as sys;
 }
