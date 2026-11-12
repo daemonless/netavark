@@ -133,6 +133,12 @@ impl driver::NetworkDriver for Bridge<'_> {
         let no_default_route: bool = opts.no_default_route.unwrap_or(false);
         let vrf: Option<String> = opts.vrf.clone();
         let vlan: Option<u16> = opts.vlan;
+        #[cfg(not(target_os = "linux"))]
+        if vlan.is_some() {
+            return Err(NetavarkError::msg(
+                "the vlan option is not supported on this platform",
+            ));
+        }
 
         let host_interface_name = parse_option(
             &self.info.per_network_opts.options,
