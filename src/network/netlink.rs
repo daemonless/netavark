@@ -9,7 +9,8 @@ use netlink_packet_core::{
     NetlinkBuffer, NetlinkDeserializable, NetlinkHeader, NetlinkMessage, NetlinkPayload,
     NetlinkSerializable, NLMSG_DONE, NLMSG_ERROR, NLM_F_DUMP, NLM_F_REQUEST,
 };
-use netlink_sys::SocketAddr;
+
+use super::netlink_socket::{Socket as RawSocket, SocketAddr};
 
 pub trait NetlinkFamily {
     const PROTOCOL: isize;
@@ -19,7 +20,7 @@ pub trait NetlinkFamily {
 const NLMSG_GOODSIZE: usize = 8192;
 
 pub struct Socket<P: NetlinkFamily> {
-    socket: netlink_sys::Socket,
+    socket: RawSocket,
     sequence_number: u32,
     ///  buffer size for reading netlink messages, see NLMSG_GOODSIZE in the kernel
     buffer: [u8; NLMSG_GOODSIZE],
@@ -64,7 +65,7 @@ where
     P: NetlinkFamily,
 {
     pub fn new() -> NetavarkResult<Socket<P>> {
-        let mut socket = wrap!(netlink_sys::Socket::new(P::PROTOCOL), "open")?;
+        let mut socket = wrap!(RawSocket::new(P::PROTOCOL), "open")?;
         let addr = &SocketAddr::new(0, 0);
         // Needs to be enabled for dump filtering to work
         socket.set_netlink_get_strict_chk(true)?;
