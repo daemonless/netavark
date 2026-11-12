@@ -519,21 +519,18 @@ pub fn get_default_route_interface(
     let routes = host.dump_routes(table).wrap("dump routes")?;
 
     for route in routes {
-        let mut dest = false;
-        let mut out_if = 0;
-        for nla in route.attributes {
-            if let netlink_packet_route::route::RouteAttribute::Destination(_) = nla {
-                dest = true;
-            }
-            if let netlink_packet_route::route::RouteAttribute::Oif(oif) = nla {
-                out_if = oif;
-            }
+        // A default route has prefix length 0. Linux omits the destination
+        // attribute for it, FreeBSD sends an explicit 0.0.0.0, so the
+        // header is the one thing both agree on.
+        if route.header.destination_prefix_length != 0 {
+            continue;
         }
-
-        // if there is no dest we have a default route
-        // return the output interface for this route
-        if !dest && out_if > 0 {
-            return host.get_link(LinkID::ID(out_if));
+        for nla in route.attributes {
+            if let netlink_packet_route::route::RouteAttribute::Oif(oif) = nla {
+                if oif > 0 {
+                    return host.get_link(LinkID::ID(oif));
+                }
+            }
         }
     }
     Err(NetavarkError::msg("failed to get default route interface"))
