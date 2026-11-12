@@ -1,13 +1,24 @@
 //! Test program only, unsupported outside of our test suite.
+#![cfg_attr(not(target_os = "linux"), allow(dead_code, unused_imports))]
+
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("netavark-connection-tester needs Linux network namespaces");
+    std::process::exit(1);
+}
 use std::{
     io::Read,
     os::fd::{AsRawFd, OwnedFd},
 };
 
+#[cfg(target_os = "linux")]
 use netavark::exec_netns;
+#[cfg(target_os = "linux")]
 use netavark::network::core_utils::join_netns;
+#[cfg(target_os = "linux")]
 use nix::sys::socket;
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args();
     _ = args.next(); // skip argv0
@@ -119,6 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn stream_test(
     listen_sock: OwnedFd,
     connect_sock: OwnedFd,
@@ -151,6 +163,7 @@ fn stream_test(
     );
 }
 
+#[cfg(target_os = "linux")]
 fn datagram_test(
     listen_sock: OwnedFd,
     connect_sock: OwnedFd,

@@ -78,6 +78,7 @@ mod tests {
     // Test commands::setup::ns_checks works correctly
     #[test]
     fn test_ns_checks() {
+        #[cfg(target_os = "linux")]
         assert!(network::validation::ns_checks("src/test/config/setupopts.test.json").is_ok());
     }
 }

@@ -1,11 +1,13 @@
 //! This is just an example plugin, do not use it in production!
 
-use std::{collections::HashMap, os::fd::AsFd};
+use std::collections::HashMap;
 
 use netavark::{
     network::{
         core_utils::{open_netlink_sockets, CoreUtils},
-        netlink_route, types,
+        netlink_route,
+        netns::NetnsExt,
+        types,
     },
     new_error,
     plugin::{Info, Plugin, PluginExec, API_VERSION},
@@ -69,7 +71,7 @@ impl Plugin for Exec {
         }
 
         host.netlink
-            .set_link_ns(link.header.index, netns.file.as_fd())?;
+            .set_link_ns(link.header.index, netns.file.netns_ref())?;
 
         // interfaces map, but we only ever expect one, for response
         let mut interfaces: HashMap<String, types::NetInterface> = HashMap::new();
@@ -104,7 +106,7 @@ impl Plugin for Exec {
 
         netns
             .netlink
-            .set_link_ns(link.header.index, host.file.as_fd())?;
+            .set_link_ns(link.header.index, host.file.netns_ref())?;
 
         Ok(())
     }

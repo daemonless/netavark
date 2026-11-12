@@ -6,6 +6,7 @@ use crate::firewall;
 use crate::network::driver::{get_network_driver, DriverInfo, NetworkDriver};
 use crate::network::netlink::Socket;
 use crate::network::netlink_route::{LinkID, NetlinkRoute};
+use crate::network::netns::NetnsExt;
 use crate::network::{self};
 use crate::network::{core_utils, types};
 
@@ -15,7 +16,6 @@ use log::{debug, error, info};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::{self};
-use std::os::fd::AsFd;
 use std::path::Path;
 
 #[derive(Parser, Debug)]
@@ -85,8 +85,8 @@ impl Setup {
                     container_name: &network_options.container_name,
                     container_hostname: &network_options.container_hostname,
                     container_dns_servers: &network_options.dns_servers,
-                    netns_host: hostns.file.as_fd(),
-                    netns_container: Some(netns.file.as_fd()),
+                    netns_host: hostns.file.netns_ref(),
+                    netns_container: Some(netns.file.netns_ref()),
                     netns_path: &self.network_namespace_path,
                     network,
                     per_network_opts,

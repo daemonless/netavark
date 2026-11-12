@@ -5,16 +5,18 @@ use base16ct::HexDisplay;
 use ipnet::IpNet;
 use netlink_packet_route::link::{IpVlanMode, LinkMessage, MacVlanMode};
 use netlink_packet_route::route::RouteType;
+#[cfg(target_os = "linux")]
 use nix::sched;
 use sha2::{Digest, Sha512};
 use std::collections::HashMap;
 use std::env;
 use std::fmt::Display;
-use std::fs::File;
+#[cfg(target_os = "linux")]
 use std::io;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
+#[cfg(target_os = "linux")]
 use std::os::unix::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
@@ -22,6 +24,7 @@ use std::str::FromStr;
 use super::netlink;
 use crate::network::netlink::Socket;
 use crate::network::netlink_route::{LinkID, NetlinkRoute, Route};
+use crate::network::netns::Netns;
 
 use netlink_packet_route::link::LinkAttribute;
 
@@ -292,6 +295,7 @@ impl CoreUtils {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub fn join_netns<Fd: AsFd>(fd: Fd) -> NetavarkResult<()> {
     match sched::setns(fd, sched::CloneFlags::CLONE_NEWNET) {
         Ok(_) => Ok(()),
@@ -305,6 +309,7 @@ pub fn join_netns<Fd: AsFd>(fd: Fd) -> NetavarkResult<()> {
 /// safe way to join the namespace and join back to the host after the task is done
 /// This first arg should be the hostns fd, the second is the container ns fd.
 /// The third and last the closure that should be executed in the ns.
+#[cfg(target_os = "linux")]
 #[macro_export]
 macro_rules! exec_netns {
     ($host:expr, $netns:expr, $exec:expr) => {{
@@ -315,13 +320,25 @@ macro_rules! exec_netns {
     }};
 }
 
+/// Run the closure inside the jail in a forked child, see [`Netns::run`].
+/// The closure must return `NetavarkResult<()>`.
+#[cfg(target_os = "freebsd")]
+#[macro_export]
+macro_rules! exec_netns {
+    ($host:expr, $netns:expr, $exec:expr) => {{
+        let _ = &$host;
+        $netns.run(|| $exec)
+    }};
+}
+
 pub struct NamespaceOptions {
     /// Note we have to return the File object since the fd is only valid
     /// as long as the File object is valid
-    pub file: File,
+    pub file: Netns,
     pub netlink: Socket<NetlinkRoute>,
 }
 
+#[cfg(target_os = "linux")]
 pub fn open_netlink_sockets(
     netns_path: &str,
 ) -> NetavarkResult<(NamespaceOptions, NamespaceOptions)> {
@@ -349,6 +366,7 @@ pub fn open_netlink_sockets(
 
 /// Open the host netlink socket. Used during teardown when the
 /// container network namespace is no longer available.
+#[cfg(target_os = "linux")]
 pub fn open_host_netlink_socket() -> NetavarkResult<NamespaceOptions> {
     let hostns = open_netlink_socket("/proc/self/ns/net").wrap("open host netns")?;
     let host_socket = netlink::Socket::<NetlinkRoute>::new().wrap("host netlink socket")?;
@@ -359,6 +377,7 @@ pub fn open_host_netlink_socket() -> NetavarkResult<NamespaceOptions> {
 }
 
 /// Open the container netns netlink socket, given an already-opened host ns.
+#[cfg(target_os = "linux")]
 pub fn open_netns_netlink_socket(
     netns_path: &str,
     hostns: &NamespaceOptions,
@@ -375,8 +394,42 @@ pub fn open_netns_netlink_socket(
     })
 }
 
-fn open_netlink_socket(netns_path: &str) -> NetavarkResult<File> {
-    wrap!(File::open(netns_path), format!("open {netns_path}"))
+#[cfg(target_os = "linux")]
+fn open_netlink_socket(netns_path: &str) -> NetavarkResult<Netns> {
+    wrap!(
+        std::fs::File::open(netns_path),
+        format!("open {netns_path}")
+    )
+}
+
+#[cfg(target_os = "freebsd")]
+pub fn open_netlink_sockets(
+    netns_path: &str,
+) -> NetavarkResult<(NamespaceOptions, NamespaceOptions)> {
+    let hostns = open_host_netlink_socket()?;
+    let netns = open_netns_netlink_socket(netns_path, &hostns)?;
+    Ok((hostns, netns))
+}
+
+#[cfg(target_os = "freebsd")]
+pub fn open_host_netlink_socket() -> NetavarkResult<NamespaceOptions> {
+    Ok(NamespaceOptions {
+        file: Netns::host(),
+        netlink: netlink::Socket::<NetlinkRoute>::new().wrap("host netlink socket")?,
+    })
+}
+
+/// Open the netlink socket for the jail named `netns_path`.
+#[cfg(target_os = "freebsd")]
+pub fn open_netns_netlink_socket(
+    netns_path: &str,
+    _hostns: &NamespaceOptions,
+) -> NetavarkResult<NamespaceOptions> {
+    let jail = wrap!(Netns::open(netns_path), format!("open jail {netns_path}"))?;
+    Ok(NamespaceOptions {
+        netlink: jail.netlink_socket().wrap("netns netlink socket")?,
+        file: jail,
+    })
 }
 
 pub fn add_default_routes(

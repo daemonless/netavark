@@ -9,8 +9,11 @@ use g_rpc::netavark_proxy_client::NetavarkProxyClient;
 use hyper_util::rt::TokioIo;
 use log::debug;
 use std::fs::File;
+#[cfg(target_os = "linux")]
 use std::net::AddrParseError;
+#[cfg(target_os = "linux")]
 use std::net::Ipv4Addr;
+#[cfg(target_os = "linux")]
 use std::str::FromStr;
 use tokio::net::UnixStream;
 use tonic::transport::{Channel, Endpoint};
@@ -286,10 +289,12 @@ impl NetworkConfig {
     }
 }
 
+#[cfg(target_os = "linux")]
 trait VectorConv {
     fn to_v4_addrs(&self) -> Result<Option<Vec<Ipv4Addr>>, AddrParseError>;
 }
 
+#[cfg(target_os = "linux")]
 impl VectorConv for Vec<String> {
     fn to_v4_addrs(&self) -> Result<Option<Vec<Ipv4Addr>>, AddrParseError> {
         if self.is_empty() {

@@ -4,6 +4,7 @@ use crate::error::{NetavarkError, NetavarkErrorList, NetavarkResult};
 use crate::network::constants::DRIVER_BRIDGE;
 use crate::network::core_utils;
 use crate::network::driver::{get_network_driver, DriverInfo};
+use crate::network::netns::NetnsExt;
 
 use crate::{firewall, network};
 use clap::builder::NonEmptyStringValueParser;
@@ -11,7 +12,6 @@ use clap::Parser;
 use log::debug;
 use nix::sys::signal;
 use std::ffi::OsString;
-use std::os::fd::AsFd;
 use std::path::Path;
 
 #[derive(Parser, Debug)]
@@ -131,8 +131,8 @@ impl Teardown {
                     container_name: &network_options.container_name,
                     container_hostname: &network_options.container_hostname,
                     container_dns_servers: &network_options.dns_servers,
-                    netns_host: hostns.file.as_fd(),
-                    netns_container: netns_file.as_ref().map(|f| f.as_fd()), // None when no netns
+                    netns_host: hostns.file.netns_ref(),
+                    netns_container: netns_file.as_ref().map(|f| f.netns_ref()), // None when no netns
                     netns_path: &self.network_namespace_path,
                     network,
                     per_network_opts,
