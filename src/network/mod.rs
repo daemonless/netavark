@@ -16,6 +16,8 @@ pub mod constants;
 pub mod core_utils;
 mod dhcp;
 pub mod driver;
+#[cfg(target_os = "freebsd")]
+pub mod freebsd;
 pub mod internal_types;
 
 pub mod netlink;
