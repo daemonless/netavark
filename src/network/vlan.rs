@@ -1,5 +1,5 @@
+use crate::network::netns::NetnsRef;
 use log::{debug, error};
-use std::os::fd::BorrowedFd;
 use std::{collections::HashMap, net::IpAddr};
 
 use crate::network::netlink::Socket;
@@ -10,12 +10,13 @@ use netlink_packet_route::link::{
 use rand::distr::{Alphanumeric, SampleString};
 
 use crate::network::core_utils::get_default_route_interface;
+#[cfg(target_os = "linux")]
+use crate::network::core_utils::join_netns;
 use crate::network::dhcp::{dhcp_teardown, get_dhcp_lease};
 use crate::{
     dns::aardvark::AardvarkEntry,
     error::{ErrorWrap, NetavarkError, NetavarkResult},
     exec_netns,
-    network::core_utils::join_netns,
     network::sysctl::disable_ipv6_autoconf,
 };
 
@@ -246,8 +247,8 @@ fn setup(
     netns: &mut Socket<NetlinkRoute>,
     if_name: &str,
     data: &InternalData,
-    hostns_fd: BorrowedFd<'_>,
-    netns_fd: BorrowedFd<'_>,
+    hostns_fd: NetnsRef<'_>,
+    netns_fd: NetnsRef<'_>,
     kind_data: &KindData,
 ) -> NetavarkResult<String> {
     let link = match data.host_interface_name.as_ref() {

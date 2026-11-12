@@ -4,7 +4,7 @@ use crate::{
     firewall::FirewallDriver,
 };
 
-use std::{ffi::OsString, net::IpAddr, os::fd::BorrowedFd, path::Path};
+use std::{ffi::OsString, net::IpAddr, path::Path};
 
 use super::{
     bridge::Bridge,
@@ -15,6 +15,7 @@ use super::{
 };
 use crate::network::netlink::Socket;
 use crate::network::netlink_route::NetlinkRoute;
+use crate::network::netns::NetnsRef;
 use std::os::unix::fs::PermissionsExt;
 
 pub struct DriverInfo<'a> {
@@ -22,8 +23,8 @@ pub struct DriverInfo<'a> {
     pub container_id: &'a String,
     pub container_name: &'a String,
     pub container_dns_servers: &'a Option<Vec<IpAddr>>,
-    pub netns_host: BorrowedFd<'a>,
-    pub netns_container: Option<BorrowedFd<'a>>,
+    pub netns_host: NetnsRef<'a>,
+    pub netns_container: Option<NetnsRef<'a>>,
     pub netns_path: &'a str,
     pub network: &'a Network,
     pub per_network_opts: &'a PerNetworkOptions,

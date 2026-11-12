@@ -1,9 +1,7 @@
-use std::{
-    net::{Ipv4Addr, Ipv6Addr},
-    os::fd::{AsFd, AsRawFd, BorrowedFd},
-};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use super::netlink_socket::NETLINK_ROUTE;
+use super::netns::NetnsRef;
 use crate::{
     error::{NetavarkError, NetavarkResult},
     network::{
@@ -24,6 +22,8 @@ use netlink_packet_route::{
     route::{RouteAddress, RouteMessage, RouteProtocol, RouteScope, RouteType},
     AddressFamily, RouteNetlinkMessage,
 };
+#[cfg(target_os = "linux")]
+use std::os::fd::{AsFd, AsRawFd};
 
 // Route table ids. Linux keeps its routes in the main table (254). On FreeBSD
 // a table is a FIB: the default FIB is 0 and the kernel takes the FIB from
@@ -46,7 +46,7 @@ pub struct CreateLinkOptions<'fd> {
     pub primary_index: u32,
     pub link: u32,
     pub mac: Vec<u8>,
-    pub netns: Option<BorrowedFd<'fd>>,
+    pub netns: Option<NetnsRef<'fd>>,
 }
 
 pub enum LinkID {
@@ -131,6 +131,14 @@ impl Socket<NetlinkRoute> {
     }
 
     pub fn create_link(&mut self, options: CreateLinkOptions) -> NetavarkResult<()> {
+        // FreeBSD has no netlink attribute for this; an interface is moved
+        // into a jail after creation with the SIOCSIFVNET ioctl.
+        #[cfg(not(target_os = "linux"))]
+        if options.netns.is_some() {
+            return Err(NetavarkError::msg(
+                "creating a link inside a jail is not supported yet",
+            ));
+        }
         let mut msg = LinkMessage::default();
         parse_create_link_options(&mut msg, options);
         let result = self.make_netlink_request(
@@ -175,7 +183,8 @@ impl Socket<NetlinkRoute> {
         Ok(())
     }
 
-    pub fn set_link_ns<Fd: AsFd>(&mut self, link_id: u32, netns: Fd) -> NetavarkResult<()> {
+    #[cfg(target_os = "linux")]
+    pub fn set_link_ns(&mut self, link_id: u32, netns: NetnsRef<'_>) -> NetavarkResult<()> {
         let mut msg = LinkMessage::default();
         msg.header.index = link_id;
         msg.attributes
@@ -184,6 +193,15 @@ impl Socket<NetlinkRoute> {
         let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
         Ok(())
+    }
+
+    /// Moving a link into a jail is an ioctl on FreeBSD (SIOCSIFVNET), not
+    /// a netlink attribute.
+    #[cfg(not(target_os = "linux"))]
+    pub fn set_link_ns(&mut self, _link_id: u32, _netns: NetnsRef<'_>) -> NetavarkResult<()> {
+        Err(NetavarkError::msg(
+            "moving a link into a jail is not supported yet",
+        ))
     }
 
     /// set the vlan_filtering attribute on a bridge
@@ -556,6 +574,7 @@ pub fn parse_create_link_options(msg: &mut LinkMessage, options: CreateLinkOptio
     }
 
     // add netnsfd
+    #[cfg(target_os = "linux")]
     if let Some(netns) = options.netns {
         msg.attributes
             .push(LinkAttribute::NetNsFd(netns.as_raw_fd()));

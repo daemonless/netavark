@@ -65,7 +65,12 @@ where
     P: NetlinkFamily,
 {
     pub fn new() -> NetavarkResult<Socket<P>> {
-        let mut socket = wrap!(RawSocket::new(P::PROTOCOL), "open")?;
+        Self::from_raw(wrap!(RawSocket::new(P::PROTOCOL), "open")?)
+    }
+
+    /// Finish setting up a socket that was opened elsewhere, for example
+    /// inside a FreeBSD jail.
+    pub(crate) fn from_raw(mut socket: RawSocket) -> NetavarkResult<Socket<P>> {
         let addr = &SocketAddr::new(0, 0);
         // Needs to be enabled for dump filtering to work
         socket.set_netlink_get_strict_chk(true)?;

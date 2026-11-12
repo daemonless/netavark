@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     fs,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    os::fd::BorrowedFd,
 };
 
 use crate::dns::aardvark::SafeString;
@@ -41,7 +40,7 @@ use super::{
         OPTION_MODE, OPTION_MTU, OPTION_NO_DEFAULT_ROUTE, OPTION_OUTBOUND_ADDR4,
         OPTION_OUTBOUND_ADDR6, OPTION_VLAN, OPTION_VRF, VALID_BRIDGE_OPTS,
     },
-    core_utils::{self, get_ipam_addresses, is_using_systemd, join_netns, parse_option, CoreUtils},
+    core_utils::{self, get_ipam_addresses, is_using_systemd, parse_option, CoreUtils},
     driver::{self, DriverInfo},
     internal_types::{
         IPAMAddresses, IsolateOption, PortForwardConfig, SetupNetwork, TearDownNetwork,
@@ -50,6 +49,9 @@ use super::{
     sysctl,
     types::StatusBlock,
 };
+#[cfg(target_os = "linux")]
+use crate::network::core_utils::join_netns;
+use crate::network::netns::NetnsRef;
 
 const NO_BRIDGE_NAME_ERROR: &str = "no bridge interface name given";
 
@@ -737,8 +739,8 @@ fn create_interfaces(
     data: &InternalData,
     internal: bool,
     rootless: bool,
-    hostns_fd: BorrowedFd<'_>,
-    netns_fd: BorrowedFd<'_>,
+    hostns_fd: NetnsRef<'_>,
+    netns_fd: NetnsRef<'_>,
 ) -> NetavarkResult<CreateInterfacesResult> {
     let mut sysctl_writer = None;
     let (bridge_index, mtu, mac) = match host
@@ -938,8 +940,8 @@ fn create_veth_pair<'fd>(
     primary_index: u32,
     bridge_mac: Option<Vec<u8>>,
     internal: bool,
-    hostns_fd: BorrowedFd<'fd>,
-    netns_fd: BorrowedFd<'fd>,
+    hostns_fd: NetnsRef<'fd>,
+    netns_fd: NetnsRef<'fd>,
     mtu: u32,
 ) -> NetavarkResult<String> {
     let mut peer_opts =
