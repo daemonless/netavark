@@ -13,15 +13,29 @@ use crate::{
 };
 use log::info;
 use netlink_packet_core::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_EXCL};
+#[cfg(target_os = "linux")]
+use netlink_packet_route::link::{AfSpecBridge, BridgeVlanInfo};
 use netlink_packet_route::{
     address::AddressMessage,
     link::{
-        AfSpecBridge, BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoKind,
-        LinkAttribute, LinkFlags, LinkInfo, LinkMessage,
+        BridgeVlanInfoFlags, InfoBridge, InfoData, InfoKind, LinkAttribute, LinkFlags, LinkInfo,
+        LinkMessage,
     },
     route::{RouteAddress, RouteMessage, RouteProtocol, RouteScope, RouteType},
     AddressFamily, RouteNetlinkMessage,
 };
+
+// Route table ids. Linux keeps its routes in the main table (254). On FreeBSD
+// a table is a FIB: the default FIB is 0 and the kernel takes the FIB from
+// the RTA_TABLE attribute, so the u8 header slot is 0 for main and unspec.
+#[cfg(target_os = "linux")]
+const RT_TABLE_MAIN: u8 = libc::RT_TABLE_MAIN;
+#[cfg(target_os = "linux")]
+const RT_TABLE_UNSPEC: u8 = libc::RT_TABLE_UNSPEC;
+#[cfg(target_os = "freebsd")]
+const RT_TABLE_MAIN: u8 = 0;
+#[cfg(target_os = "freebsd")]
+const RT_TABLE_UNSPEC: u8 = 0;
 
 #[derive(Clone)]
 pub struct CreateLinkOptions<'fd> {
@@ -192,6 +206,7 @@ impl Socket<NetlinkRoute> {
 
     /// set the vlan id for an interface which is attached to the bridge with vlan_filtering
     /// Performs the equivalent of "bridge vlan add dev test vid <num> [flags]"
+    #[cfg(target_os = "linux")]
     pub fn set_vlan_id(
         &mut self,
         link_id: u32,
@@ -212,6 +227,19 @@ impl Socket<NetlinkRoute> {
         let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
         Ok(())
+    }
+
+    /// FreeBSD bridges have no netlink interface for vlan filtering.
+    #[cfg(not(target_os = "linux"))]
+    pub fn set_vlan_id(
+        &mut self,
+        _link_id: u32,
+        _vid: u16,
+        _flags: BridgeVlanInfoFlags,
+    ) -> NetavarkResult<()> {
+        Err(NetavarkError::msg(
+            "bridge vlan filtering is not supported on this platform",
+        ))
     }
 
     fn create_addr_msg(link_id: u32, addr: &ipnet::IpNet) -> AddressMessage {
@@ -276,7 +304,7 @@ impl Socket<NetlinkRoute> {
     fn create_route_msg(route: &Route) -> RouteMessage {
         let mut msg = RouteMessage::default();
 
-        msg.header.table = libc::RT_TABLE_MAIN;
+        msg.header.table = RT_TABLE_MAIN;
         msg.header.protocol = RouteProtocol::Static;
         msg.header.scope = RouteScope::Universe;
 
@@ -357,7 +385,7 @@ impl Socket<NetlinkRoute> {
     pub fn dump_routes(&mut self, table: Option<u32>) -> NetavarkResult<Vec<RouteMessage>> {
         let mut msg: RouteMessage = RouteMessage::default();
 
-        msg.header.table = libc::RT_TABLE_UNSPEC;
+        msg.header.table = RT_TABLE_UNSPEC;
         msg.header.protocol = RouteProtocol::Unspec;
         msg.header.scope = RouteScope::Universe;
         msg.header.kind = RouteType::Unicast;
@@ -365,7 +393,7 @@ impl Socket<NetlinkRoute> {
         msg.attributes
             .push(netlink_packet_route::route::RouteAttribute::Table(
                 // default to the main table instead of dumping all tables
-                table.unwrap_or(libc::RT_TABLE_MAIN.into()),
+                table.unwrap_or(RT_TABLE_MAIN.into()),
             ));
 
         let results = self.make_netlink_request(RouteNetlinkMessage::GetRoute(msg), NLM_F_DUMP)?;
