@@ -61,7 +61,11 @@ impl Setup {
             core_utils::open_netlink_sockets(&self.network_namespace_path)?;
 
         // setup loopback, it should be safe to assume that 1 is the loopback index
+        #[cfg(target_os = "linux")]
         netns.netlink.set_up(LinkID::ID(1))?;
+        // FreeBSD interface indexes are global across vnets, so go by name.
+        #[cfg(not(target_os = "linux"))]
+        netns.netlink.set_up(LinkID::Name("lo0".to_string()))?;
 
         let config_dir = get_config_dir(config_dir, "setup")?;
         let mut drivers = Vec::with_capacity(network_options.network_info.len());
