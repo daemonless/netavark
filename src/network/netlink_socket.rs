@@ -19,8 +19,6 @@ mod freebsd {
 
     // From <sys/socket.h> and <netlink/netlink.h>.
     const AF_NETLINK: libc::c_int = 38;
-    const SOL_NETLINK: libc::c_int = 270;
-    const NETLINK_GET_STRICT_CHK: libc::c_int = 12;
     pub const NETLINK_ROUTE: isize = 0;
 
     #[repr(C)]
@@ -72,20 +70,6 @@ mod freebsd {
                 return Err(io::Error::last_os_error());
             }
             Ok(Self(unsafe { OwnedFd::from_raw_fd(fd) }))
-        }
-
-        pub fn set_netlink_get_strict_chk(&mut self, value: bool) -> io::Result<()> {
-            let value: libc::c_int = value.into();
-            let res = unsafe {
-                libc::setsockopt(
-                    self.0.as_raw_fd(),
-                    SOL_NETLINK,
-                    NETLINK_GET_STRICT_CHK,
-                    &value as *const libc::c_int as *const libc::c_void,
-                    mem::size_of::<libc::c_int>() as libc::socklen_t,
-                )
-            };
-            check_int(res)
         }
 
         pub fn bind(&mut self, addr: &SocketAddr) -> io::Result<()> {

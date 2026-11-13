@@ -1,7 +1,11 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+#[cfg(target_os = "freebsd")]
+use super::freebsd;
 use super::netlink_socket::NETLINK_ROUTE;
 use super::netns::NetnsRef;
+#[cfg(not(target_os = "linux"))]
+use crate::wrap;
 use crate::{
     error::{NetavarkError, NetavarkResult},
     network::{
@@ -130,15 +134,8 @@ impl Socket<NetlinkRoute> {
         }
     }
 
+    #[cfg(target_os = "linux")]
     pub fn create_link(&mut self, options: CreateLinkOptions) -> NetavarkResult<()> {
-        // FreeBSD has no netlink attribute for this; an interface is moved
-        // into a jail after creation with the SIOCSIFVNET ioctl.
-        #[cfg(not(target_os = "linux"))]
-        if options.netns.is_some() {
-            return Err(NetavarkError::msg(
-                "creating a link inside a jail is not supported yet",
-            ));
-        }
         let mut msg = LinkMessage::default();
         parse_create_link_options(&mut msg, options);
         let result = self.make_netlink_request(
@@ -150,11 +147,58 @@ impl Socket<NetlinkRoute> {
         Ok(())
     }
 
+    /// FreeBSD's netlink creates clones only under the cloner's own name
+    /// and cannot rename, so a bridge is created and renamed by ioctl.
+    /// Veth pairs are epairs and are built by the bridge driver.
+    #[cfg(not(target_os = "linux"))]
+    pub fn create_link(&mut self, options: CreateLinkOptions) -> NetavarkResult<()> {
+        if options.netns.is_some() {
+            return Err(NetavarkError::msg(
+                "creating a link inside a jail is not supported on FreeBSD",
+            ));
+        }
+        match options.kind {
+            InfoKind::Bridge => {
+                let created = wrap!(freebsd::create_interface("bridge"), "create bridge")?;
+                if let Err(e) = freebsd::rename_interface(&created, &options.name) {
+                    let _ = freebsd::destroy_interface(&created);
+                    return Err(NetavarkError::wrap(
+                        format!("rename {created} to {}", options.name),
+                        e.into(),
+                    ));
+                }
+                if options.mtu != 0 {
+                    self.set_mtu(LinkID::Name(options.name), options.mtu)?;
+                }
+                Ok(())
+            }
+            kind => Err(NetavarkError::msg(format!(
+                "creating {kind:?} links is not supported on FreeBSD"
+            ))),
+        }
+    }
+
+    /// Modify a link. Linux has RTM_SETLINK for that; FreeBSD only handles
+    /// RTM_NEWLINK, which modifies unless NLM_F_CREATE is set.
+    fn set_link(
+        &mut self,
+        msg: LinkMessage,
+        flags: u16,
+    ) -> NetavarkResult<Vec<RouteNetlinkMessage>> {
+        #[cfg(target_os = "linux")]
+        return self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), flags);
+        #[cfg(not(target_os = "linux"))]
+        return self.make_netlink_request(
+            RouteNetlinkMessage::NewLink(msg),
+            flags & !(NLM_F_CREATE | NLM_F_EXCL),
+        );
+    }
+
     pub fn set_link_name(&mut self, id: u32, name: String) -> NetavarkResult<()> {
         let mut msg = LinkMessage::default();
         msg.header.index = id;
         msg.attributes.push(LinkAttribute::IfName(name));
-        let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
+        let result = self.set_link(msg, NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
 
         Ok(())
@@ -178,7 +222,7 @@ impl Socket<NetlinkRoute> {
         msg.header.index = link_id;
         msg.attributes.push(LinkAttribute::NetNsPid(pid));
 
-        let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
+        let result = self.set_link(msg, NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
         Ok(())
     }
@@ -190,18 +234,20 @@ impl Socket<NetlinkRoute> {
         msg.attributes
             .push(LinkAttribute::NetNsFd(netns.as_fd().as_raw_fd()));
 
-        let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
+        let result = self.set_link(msg, NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
         Ok(())
     }
 
     /// Moving a link into a jail is an ioctl on FreeBSD (SIOCSIFVNET), not
-    /// a netlink attribute.
+    /// a netlink attribute. The link loses its addresses on the way.
     #[cfg(not(target_os = "linux"))]
-    pub fn set_link_ns(&mut self, _link_id: u32, _netns: NetnsRef<'_>) -> NetavarkResult<()> {
-        Err(NetavarkError::msg(
-            "moving a link into a jail is not supported yet",
-        ))
+    pub fn set_link_ns(&mut self, link_id: u32, netns: NetnsRef<'_>) -> NetavarkResult<()> {
+        let name = wrap!(freebsd::interface_name(link_id), "interface name")?;
+        wrap!(
+            freebsd::move_to_jail(&name, netns.jid()),
+            format!("move {name} into jail")
+        )
     }
 
     /// set the vlan_filtering attribute on a bridge
@@ -242,7 +288,7 @@ impl Socket<NetlinkRoute> {
                 BridgeVlanInfo { flags, vid },
             )]));
 
-        let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
+        let result = self.set_link(msg, NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
         Ok(())
     }
@@ -498,10 +544,22 @@ impl Socket<NetlinkRoute> {
         msg.header.flags = LinkFlags::Up;
         msg.header.change_mask = LinkFlags::Up;
 
-        let result = self.make_netlink_request(
-            RouteNetlinkMessage::SetLink(msg),
-            NLM_F_ACK | NLM_F_EXCL | NLM_F_CREATE,
-        )?;
+        let result = self.set_link(msg, NLM_F_ACK | NLM_F_EXCL | NLM_F_CREATE)?;
+        expect_netlink_result!(result, 0);
+
+        Ok(())
+    }
+
+    pub fn set_mtu(&mut self, id: LinkID, mtu: u32) -> NetavarkResult<()> {
+        let mut msg = LinkMessage::default();
+
+        match id {
+            LinkID::ID(id) => msg.header.index = id,
+            LinkID::Name(name) => msg.attributes.push(LinkAttribute::IfName(name)),
+        }
+        msg.attributes.push(LinkAttribute::Mtu(mtu));
+
+        let result = self.set_link(msg, NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
 
         Ok(())
@@ -517,7 +575,7 @@ impl Socket<NetlinkRoute> {
 
         msg.attributes.push(LinkAttribute::Address(mac));
 
-        let result = self.make_netlink_request(RouteNetlinkMessage::SetLink(msg), NLM_F_ACK)?;
+        let result = self.set_link(msg, NLM_F_ACK)?;
         expect_netlink_result!(result, 0);
 
         Ok(())
