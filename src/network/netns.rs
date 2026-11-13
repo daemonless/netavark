@@ -73,6 +73,10 @@ mod freebsd {
             Self { jid: -1 }
         }
 
+        pub(crate) fn jid(&self) -> libc::c_int {
+            self.jid
+        }
+
         /// Look a jail up by name. A missing jail is `NotFound`, like a
         /// missing netns file on Linux.
         pub fn open(name: &str) -> io::Result<Self> {

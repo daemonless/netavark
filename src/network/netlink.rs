@@ -72,7 +72,10 @@ where
     /// inside a FreeBSD jail.
     pub(crate) fn from_raw(mut socket: RawSocket) -> NetavarkResult<Socket<P>> {
         let addr = &SocketAddr::new(0, 0);
-        // Needs to be enabled for dump filtering to work
+        // Needs to be enabled for dump filtering to work. FreeBSD filters
+        // dumps without it, and its strict mode also rejects the header
+        // flags a link modification carries, so it stays off there.
+        #[cfg(target_os = "linux")]
         socket.set_netlink_get_strict_chk(true)?;
         wrap!(socket.bind(addr), "bind")?;
         wrap!(socket.connect(addr), "connect")?;
@@ -163,6 +166,7 @@ where
                 match rx_packet.payload {
                     NetlinkPayload::Done(_) => return Ok(result),
                     NetlinkPayload::Error(e) => {
+                        let e = normalize_errno(e);
                         if e.code.is_some() {
                             return Err(e.into());
                         }
@@ -248,6 +252,21 @@ where
 /// Scan a buffer of netlink message headers for the end of a dump
 /// (NLMSG_DONE or NLMSG_ERROR). Returns true if found, false if the
 /// buffer ran out first and the caller needs to read more.
+/// Linux reports a netlink error as a negative errno; FreeBSD sends it
+/// positive. Callers compare against the Linux convention.
+#[cfg(target_os = "linux")]
+fn normalize_errno(e: netlink_packet_core::ErrorMessage) -> netlink_packet_core::ErrorMessage {
+    e
+}
+
+#[cfg(not(target_os = "linux"))]
+fn normalize_errno(mut e: netlink_packet_core::ErrorMessage) -> netlink_packet_core::ErrorMessage {
+    if let Some(code) = e.code {
+        e.code = std::num::NonZeroI32::new(-code.get().abs());
+    }
+    e
+}
+
 fn scan_for_dump_end(mut buffer: &[u8]) -> NetavarkResult<bool> {
     while !buffer.is_empty() {
         let hdr = NetlinkBuffer::new_checked(buffer).map_err(|e| {
