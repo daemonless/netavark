@@ -8,24 +8,28 @@ use crate::dns::aardvark::SafeString;
 use crate::network::core_utils::get_default_route_interface;
 use crate::network::dhcp::{dhcp_teardown, get_dhcp_lease};
 use crate::network::netlink::Socket;
-use crate::network::netlink_route::{
-    parse_create_link_options, CreateLinkOptions, LinkID, NetlinkRoute,
-};
+#[cfg(target_os = "linux")]
+use crate::network::netlink_route::parse_create_link_options;
+use crate::network::netlink_route::{CreateLinkOptions, LinkID, NetlinkRoute};
+#[cfg(not(target_os = "linux"))]
+use crate::wrap;
 use crate::{
     dns::aardvark::AardvarkEntry,
     error::{ErrorWrap, NetavarkError, NetavarkErrorList, NetavarkResult},
-    exec_netns,
     firewall::{
         state::{remove_fw_config, write_fw_config},
         MAX_HASH_SIZE,
     },
-    network::{constants, sysctl::disable_ipv6_autoconf, types},
+    network::{constants, types},
 };
+#[cfg(target_os = "linux")]
+use crate::{exec_netns, network::sysctl::disable_ipv6_autoconf};
 use ipnet::IpNet;
 use log::{debug, error};
+#[cfg(target_os = "linux")]
+use netlink_packet_route::link::{BridgeVlanInfoFlags, InfoVeth};
 use netlink_packet_route::link::{
-    BridgeVlanInfoFlags, InfoBridge, InfoData, InfoKind, InfoVeth, LinkAttribute, LinkInfo,
-    LinkMessage,
+    InfoBridge, InfoData, InfoKind, LinkAttribute, LinkInfo, LinkMessage,
 };
 use netlink_packet_route::AddressFamily;
 use netlink_packet_route::{
@@ -932,6 +936,7 @@ fn create_interfaces(
 }
 
 /// return the container veth mac address
+#[cfg(target_os = "linux")]
 #[allow(clippy::too_many_arguments)]
 fn create_veth_pair<'fd>(
     host: &mut Socket<NetlinkRoute>,
@@ -1071,6 +1076,118 @@ fn create_veth_pair<'fd>(
     }
 
     // add static routes
+    for route in data.ipam.routes.iter() {
+        netns.add_route(route)?
+    }
+
+    Ok(mac)
+}
+
+/// FreeBSD: an epair. Its "a" end joins the bridge, its "b" end is moved
+/// into the jail and renamed there. Returns the container side's mac.
+#[cfg(not(target_os = "linux"))]
+#[allow(clippy::too_many_arguments)]
+fn create_veth_pair<'fd>(
+    host: &mut Socket<NetlinkRoute>,
+    netns: &mut Socket<NetlinkRoute>,
+    data: &InternalData,
+    primary_index: u32,
+    bridge_mac: Option<Vec<u8>>,
+    internal: bool,
+    _hostns_fd: NetnsRef<'fd>,
+    netns_fd: NetnsRef<'fd>,
+    mtu: u32,
+) -> NetavarkResult<String> {
+    use crate::network::freebsd;
+
+    let a = wrap!(freebsd::create_interface("epair"), "create epair")?;
+    let b = format!("{}b", &a[..a.len() - 1]);
+    let mut host_name = a.clone();
+
+    let result = (|| -> NetavarkResult<()> {
+        if !data.host_interface_name.is_empty() {
+            wrap!(
+                freebsd::rename_interface(&a, &data.host_interface_name),
+                format!("rename {a} to {}", data.host_interface_name)
+            )?;
+            host_name = data.host_interface_name.clone();
+        }
+        if mtu != 0 {
+            host.set_mtu(LinkID::Name(host_name.clone()), mtu)
+                .wrap("set host epair mtu")?;
+            host.set_mtu(LinkID::Name(b.clone()), mtu)
+                .wrap("set container epair mtu")?;
+        }
+        if let Some(mac) = &data.mac_address {
+            host.set_mac_address(LinkID::Name(b.clone()), mac.clone())
+                .wrap("set container epair mac")?;
+        }
+        wrap!(
+            freebsd::move_to_jail(&b, netns_fd.jid()),
+            format!("move {b} into the jail")
+        )?;
+        let (from, to) = (b.clone(), data.container_interface_name.clone());
+        netns_fd.run(move || {
+            wrap!(
+                freebsd::rename_interface(&from, &to),
+                format!("rename {from} to {to} in the jail")
+            )
+        })?;
+        wrap!(
+            freebsd::bridge_add_member(&data.bridge_interface_name, &host_name),
+            format!("add {host_name} to bridge {}", data.bridge_interface_name)
+        )
+    })();
+    if let Err(e) = result {
+        let _ = freebsd::destroy_interface(&host_name);
+        return Err(NetavarkError::wrap("create epair", e));
+    }
+
+    let veth = netns
+        .get_link(LinkID::Name(data.container_interface_name.to_string()))
+        .wrap("get container epair")?;
+
+    let mut mac = String::from("");
+    for nla in veth.attributes.into_iter() {
+        if let LinkAttribute::Address(ref addr) = nla {
+            mac = CoreUtils::encode_address_to_hex(addr);
+        }
+    }
+    if mac.is_empty() {
+        return Err(NetavarkError::Message(
+            "failed to get the mac address from the container epair interface".to_string(),
+        ));
+    }
+
+    let host_link = host
+        .get_link(LinkID::Name(host_name))
+        .wrap("get host epair")?
+        .header
+        .index;
+    host.set_up(LinkID::ID(host_link))
+        .wrap("failed to set host epair up")?;
+
+    // See the Linux version: pin the bridge mac so it does not follow
+    // whichever member has the lowest one.
+    if let Some(m) = bridge_mac {
+        host.set_mac_address(LinkID::ID(primary_index), m)
+            .wrap("set static mac on bridge")?;
+    }
+
+    for addr in &data.ipam.container_addresses {
+        netns
+            .add_addr(veth.header.index, addr)
+            .wrap("add ip addr to container epair")?;
+    }
+
+    netns
+        .set_up(LinkID::ID(veth.header.index))
+        .wrap("set container epair up")?;
+
+    if !internal && !data.no_default_route {
+        core_utils::add_default_routes(netns, &data.ipam.gateway_addresses, data.metric)?;
+    }
+
     for route in data.ipam.routes.iter() {
         netns.add_route(route)?
     }
